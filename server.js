@@ -378,7 +378,9 @@ app.post('/publish', async (req, res) => {
   }
 });
 
-app.listen(config.port, () => {
+const host = '0.0.0.0';
+
+app.listen(config.port, host, () => {
   ensureDataDir();
-  console.log(`tistory automation server listening on ${config.port}`);
+  console.log(`tistory automation server listening on ${host}:${config.port}`);
 });
