@@ -13,8 +13,14 @@ Playwright-based server for automated Tistory publishing.
 
 1. Set `TISTORY_BLOG_URL`.
 2. Save a valid Playwright storage state with a logged-in Tistory session.
-3. Upload that storage state with `POST /session/seed`, or place it at `TISTORY_STORAGE_STATE_PATH`.
-4. Tune selectors with env vars if your Tistory editor UI differs from the defaults.
+3. Recommended: store that storage state in Upstash Redis and set:
+   - `UPSTASH_REDIS_REST_URL`
+   - `UPSTASH_REDIS_REST_TOKEN`
+   - `UPSTASH_STORAGE_KEY`
+4. Fallback: upload that storage state with `POST /session/seed`, or place it at `TISTORY_STORAGE_STATE_PATH`.
+5. Tune selectors with env vars if your Tistory editor UI differs from the defaults.
+
+When Upstash env vars are configured, the server uses Upstash as the primary storage backend for the Playwright session. Otherwise it falls back to the local file path.
 
 ## Example `/session/seed`
 
@@ -26,6 +32,10 @@ Playwright-based server for automated Tistory publishing.
   }
 }
 ```
+
+## Health/session response
+
+`/health` and `/session/check` return `storageBackend` as either `upstash` or `file`.
 
 ## Example `/publish`
 

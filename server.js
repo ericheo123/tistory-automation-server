@@ -17,6 +17,9 @@ const config = {
   newPostUrl: env('TISTORY_NEW_POST_URL'),
   manageUrl: env('TISTORY_MANAGE_URL'),
   storageStatePath: env('TISTORY_STORAGE_STATE_PATH', path.join(__dirname, 'data', 'storageState.json')),
+  upstashUrl: env('UPSTASH_REDIS_REST_URL'),
+  upstashToken: env('UPSTASH_REDIS_REST_TOKEN'),
+  upstashStorageKey: env('UPSTASH_STORAGE_KEY', 'tistory:storageState'),
   headless: env('TISTORY_HEADLESS', 'true') !== 'false',
   slowMo: Number(env('TISTORY_SLOW_MO_MS', '0')),
   timeoutMs: Number(env('TISTORY_NAVIGATION_TIMEOUT_MS', '45000')),
@@ -32,61 +35,126 @@ const config = {
     htmlTextarea: env('TISTORY_HTML_TEXTAREA_SELECTOR', 'textarea:not(.textarea_tit)'),
     category: env('TISTORY_CATEGORY_SELECTOR', ''),
     publicRadio: env('TISTORY_PUBLIC_RADIO_SELECTOR', 'input[name="basicSet"]'),
-    privateRadio: env('TISTORY_PRIVATE_RADIO_SELECTOR', 'input[name="basicSet"]'),
-  },
+    privateRadio: env('TISTORY_PRIVATE_RADIO_SELECTOR', 'input[name="basicSet"]')
+  }
 };
 
-const REDIS_URL = env('UPSTASH_REDIS_REST_URL');
-const REDIS_TOKEN = env('UPSTASH_REDIS_REST_TOKEN');
-const REDIS_KEY = 'tistory_session';
+function hasUpstashConfig() {
+  return Boolean(config.upstashUrl && config.upstashToken && config.upstashStorageKey);
+}
 
-async function readSessionFromRedis() {
-  if (!REDIS_URL || !REDIS_TOKEN) return null;
-  try {
-    const res = await fetch(REDIS_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(['GET', REDIS_KEY]),
-    });
-    const data = await res.json();
-    if (data.result) { console.log('[redis] 세션 로드 성공'); return JSON.parse(data.result); }
+function ensureDataDir() {
+  fs.mkdirSync(path.dirname(config.storageStatePath), { recursive: true });
+}
+
+function readLocalStorageState() {
+  if (!fs.existsSync(config.storageStatePath)) {
     return null;
-  } catch (e) { console.warn('[redis] 읽기 실패:', e.message); return null; }
+  }
+
+  return JSON.parse(fs.readFileSync(config.storageStatePath, 'utf8'));
 }
 
-async function writeSessionToRedis(storageState) {
-  if (!REDIS_URL || !REDIS_TOKEN) return false;
-  try {
-    const res = await fetch(REDIS_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(['SET', REDIS_KEY, JSON.stringify(storageState)]),
-    });
-    const data = await res.json();
-    const ok = data.result === 'OK';
-    console.log('[redis] 세션 저장:', ok ? '성공' : '실패');
-    return ok;
-  } catch (e) { console.warn('[redis] 쓰기 실패:', e.message); return false; }
+function writeLocalStorageState(storageState) {
+  ensureDataDir();
+  fs.writeFileSync(config.storageStatePath, JSON.stringify(storageState, null, 2));
 }
-function ensureDataDir() { fs.mkdirSync(path.dirname(config.storageStatePath), { recursive: true }); }
-function storageStateExists() { return fs.existsSync(config.storageStatePath); }
-function writeStorageStateToFile(storageState) { ensureDataDir(); fs.writeFileSync(config.storageStatePath, JSON.stringify(storageState, null, 2)); }
-async function saveSession(storageState) { writeStorageStateToFile(storageState); await writeSessionToRedis(storageState); }
 
-function splitSelectors(value) { return String(value || '').split('||').map((item) => item.trim()).filter(Boolean); }
+async function upstashCommand(command) {
+  const response = await fetch(config.upstashUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.upstashToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(command)
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Upstash request failed with ${response.status}`);
+  }
+
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  return data.result;
+}
+
+async function readStorageState() {
+  if (hasUpstashConfig()) {
+    try {
+      const result = await upstashCommand(['GET', config.upstashStorageKey]);
+      if (result) {
+        const parsed = typeof result === 'string' ? JSON.parse(result) : result;
+        writeLocalStorageState(parsed);
+        console.log('[session] Upstash session loaded');
+        return parsed;
+      }
+    } catch (err) {
+      console.warn('[session] Upstash read failed:', err.message);
+    }
+  }
+
+  const localState = readLocalStorageState();
+  if (localState) {
+    console.log('[session] Local file session loaded');
+  }
+  return localState;
+}
+
+async function writeStorageState(storageState) {
+  writeLocalStorageState(storageState);
+
+  if (hasUpstashConfig()) {
+    await upstashCommand(['SET', config.upstashStorageKey, JSON.stringify(storageState)]);
+  }
+}
+
+async function storageStateExists() {
+  if (hasUpstashConfig()) {
+    try {
+      const result = await upstashCommand(['EXISTS', config.upstashStorageKey]);
+      if (Number(result) > 0) {
+        return true;
+      }
+    } catch (err) {
+      console.warn('[session] Upstash exists check failed:', err.message);
+    }
+  }
+
+  return fs.existsSync(config.storageStatePath);
+}
+
+function splitSelectors(value) {
+  return String(value || '')
+    .split('||')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 async function firstLocator(page, selectorString) {
   for (const selector of splitSelectors(selectorString)) {
     const locator = page.locator(selector).first();
-    if (await locator.count()) return locator;
+    if (await locator.count()) {
+      return locator;
+    }
   }
   return null;
 }
+
 async function clickFirst(page, selectorString) {
   const locator = await firstLocator(page, selectorString);
   if (!locator) return false;
-  try { await locator.click(); } catch (err) { await locator.click({ force: true }); }
+  try {
+    await locator.click();
+  } catch (err) {
+    await locator.click({ force: true });
+  }
   return true;
 }
+
 async function fillFirst(page, selectorString, value) {
   const locator = await firstLocator(page, selectorString);
   if (!locator) return false;
@@ -94,30 +162,41 @@ async function fillFirst(page, selectorString, value) {
   await locator.fill(value);
   return true;
 }
-function normalizeTags(tagsCsv) { return String(tagsCsv || '').split(',').map((item) => item.trim()).filter(Boolean); }
-function resolveBlogUrl(inputUrl) { return String(inputUrl || config.blogUrl || '').replace(/\/+$/, ''); }
-function resolveManageUrl(blogUrl) { return config.manageUrl || `${blogUrl}/manage`; }
-function resolveNewPostUrl(blogUrl) { return config.newPostUrl || `${blogUrl}/manage/newpost`; }
+
+function normalizeTags(tagsCsv) {
+  return String(tagsCsv || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function resolveBlogUrl(inputUrl) {
+  return String(inputUrl || config.blogUrl || '').replace(/\/+$/, '');
+}
+
+function resolveManageUrl(blogUrl) {
+  return config.manageUrl || `${blogUrl}/manage`;
+}
+
+function resolveNewPostUrl(blogUrl) {
+  return config.newPostUrl || `${blogUrl}/manage/newpost`;
+}
 
 async function launchContext() {
   const browser = await chromium.launch({
-    headless: config.headless, slowMo: config.slowMo,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    headless: config.headless,
+    slowMo: config.slowMo,
+    args: ['--no-sandbox', '--disable-dev-shm-usage']
   });
+
   const contextOptions = {};
-  if (storageStateExists()) {
-    contextOptions.storageState = config.storageStatePath;
-    console.log('[session] 로컬 파일에서 세션 로드');
+  const storageState = await readStorageState();
+  if (storageState) {
+    contextOptions.storageState = storageState;
   } else {
-    const redisSession = await readSessionFromRedis();
-    if (redisSession) {
-      writeStorageStateToFile(redisSession);
-      contextOptions.storageState = config.storageStatePath;
-      console.log('[session] Redis에서 세션 복구 완료');
-    } else {
-      console.log('[session] 세션 없음 - /session/seed 필요');
-    }
+    console.log('[session] No session found. Seed session is required.');
   }
+
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
   page.setDefaultTimeout(config.timeoutMs);
@@ -125,41 +204,59 @@ async function launchContext() {
   return { browser, context, page };
 }
 
-async function cleanupBrowser(browser) { if (browser) await browser.close(); }
+async function cleanupBrowser(browser) {
+  if (browser) {
+    await browser.close();
+  }
+}
 
 async function findPublishedPostUrl(context, blogUrl, title) {
   const page = await context.newPage();
   page.setDefaultTimeout(config.timeoutMs);
   page.setDefaultNavigationTimeout(config.timeoutMs);
+
   try {
     await page.goto(`${resolveManageUrl(blogUrl)}/posts/`, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
+
     const targetTitle = String(title || '').trim();
-    if (!targetTitle) return null;
+    if (!targetTitle) {
+      return null;
+    }
+
     const href = await page.evaluate((expectedTitle) => {
       const links = Array.from(document.querySelectorAll('a.link_cont'));
       const normalized = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
       const exact = links.find((link) => normalized(link.textContent) === normalized(expectedTitle));
-      if (exact?.href) return exact.href;
+      if (exact?.href) {
+        return exact.href;
+      }
+
       const partial = links.find((link) => normalized(link.textContent).includes(normalized(expectedTitle)));
       return partial?.href || null;
     }, targetTitle);
+
     return href || null;
-  } finally { await page.close().catch(() => {}); }
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 async function ensureLoggedIn(page, blogUrl) {
   await page.goto(resolveManageUrl(blogUrl), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
+
   const currentUrl = page.url();
   const loggedIn = currentUrl.includes('/manage') && !currentUrl.includes('accounts.kakao.com');
-  if (!loggedIn) {
-    throw new Error('티스토리 세션이 없거나 만료되었습니다. 로컈에서 node save-session.js 실행 후 /session/seed 로 업로드해주세요.');
-  }
   return { loggedIn, currentUrl };
 }
+
 async function setHtmlContent(page, html) {
-  if (config.selectors.htmlModeButton) { await clickFirst(page, config.selectors.htmlModeButton); }
+  if (config.selectors.htmlModeButton) {
+    await clickFirst(page, config.selectors.htmlModeButton);
+  }
+
   const frameLocator = page.locator('#editor-tistory_ifr').first();
   if (await frameLocator.count().catch(() => 0)) {
     const frame = await frameLocator.elementHandle();
@@ -167,10 +264,13 @@ async function setHtmlContent(page, html) {
     if (contentFrame) {
       const body = contentFrame.locator('body').first();
       await body.click();
-      await contentFrame.evaluate((value) => { document.body.innerHTML = value; }, html);
+      await contentFrame.evaluate((value) => {
+        document.body.innerHTML = value;
+      }, html);
       return { mode: 'iframe-body' };
     }
   }
+
   if (config.selectors.htmlTextarea) {
     const selectors = splitSelectors(config.selectors.htmlTextarea);
     for (const selector of selectors) {
@@ -178,136 +278,252 @@ async function setHtmlContent(page, html) {
       for (let index = 0; index < count; index += 1) {
         const textarea = page.locator(selector).nth(index);
         const currentValue = await textarea.inputValue().catch(() => '');
-        if (selector.includes('textarea') && currentValue.length > 2000) continue;
+        if (selector.includes('textarea') && currentValue.length > 2000) {
+          continue;
+        }
         await textarea.fill(html);
         return { mode: 'html-textarea', selector, index };
       }
     }
     const textarea = await firstLocator(page, config.selectors.htmlTextarea);
-    if (textarea) { await textarea.fill(html); return { mode: 'html-textarea' }; }
+    if (textarea) {
+      await textarea.fill(html);
+      return { mode: 'html-textarea' };
+    }
   }
+
   const editor = await firstLocator(page, config.selectors.editor);
-  if (!editor) throw new Error('에디터를 찾을 수 없습니다.');
+  if (!editor) {
+    throw new Error('Could not find a Tistory editor element. Set TISTORY_EDITOR_SELECTOR or TISTORY_HTML_TEXTAREA_SELECTOR.');
+  }
+
   await editor.click();
   await page.evaluate(
     ({ selector, value }) => {
-      const candidates = selector.split('||').map((item) => item.trim()).filter(Boolean);
-      const target = candidates.map((candidate) => document.querySelector(candidate)).find(Boolean) || document.querySelector('[contenteditable="true"]');
-      if (!target) throw new Error('에디터 요소를 찾을 수 없습니다');
+      const candidates = selector
+        .split('||')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const target =
+        candidates
+          .map((candidate) => document.querySelector(candidate))
+          .find(Boolean) ||
+        document.querySelector('[contenteditable="true"]');
+
+      if (!target) {
+        throw new Error('Editor target not found');
+      }
+
       target.innerHTML = value;
       target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '' }));
       target.dispatchEvent(new Event('change', { bubbles: true }));
     },
     { selector: config.selectors.editor, value: html }
   );
+
   return { mode: 'contenteditable' };
 }
 
 async function addTags(page, tagsCsv) {
   const tags = normalizeTags(tagsCsv);
-  if (!tags.length) return { count: 0 };
+  if (!tags.length) {
+    return { count: 0 };
+  }
+
   const input = await firstLocator(page, config.selectors.tagInput);
-  if (!input) return { count: 0, skipped: true };
-  for (const tag of tags) { await input.fill(tag); await input.press('Enter'); }
+  if (!input) {
+    return { count: 0, skipped: true };
+  }
+
+  for (const tag of tags) {
+    await input.fill(tag);
+    await input.press('Enter');
+  }
+
   return { count: tags.length };
 }
+
 async function setCategory(page, categoryId) {
-  if (!config.selectors.category || !categoryId) return { skipped: true };
+  if (!config.selectors.category || !categoryId) {
+    return { skipped: true };
+  }
+
   const locator = await firstLocator(page, config.selectors.category);
-  if (!locator) return { skipped: true };
+  if (!locator) {
+    return { skipped: true };
+  }
+
   await locator.selectOption(String(categoryId));
   return { skipped: false };
 }
+
 async function setVisibility(page, visibility) {
-  if (!config.selectors.publicRadio) return { skipped: true };
+  if (!config.selectors.publicRadio) {
+    return { skipped: true };
+  }
   const radios = page.locator(config.selectors.publicRadio);
   const count = await radios.count().catch(() => 0);
-  if (!count) return { skipped: true };
-  if (visibility === 'public') { await radios.nth(0).check({ force: true }); return { skipped: false, mode: 'public' }; }
+  if (!count) {
+    return { skipped: true };
+  }
+
+  if (visibility === 'public') {
+    await radios.nth(0).check({ force: true });
+    return { skipped: false, mode: 'public' };
+  }
+
   await radios.nth(Math.max(0, count - 1)).check({ force: true });
   return { skipped: false, mode: 'private' };
 }
 
 async function publishPost(payload) {
   const blogUrl = resolveBlogUrl(payload.blogUrl);
-  if (!blogUrl) throw new Error('blogUrl is required');
-  if (!payload.title) throw new Error('title is required');
-  if (!payload.html) throw new Error('html is required');
+  if (!blogUrl) {
+    throw new Error('blogUrl is required');
+  }
+  if (!payload.title) {
+    throw new Error('title is required');
+  }
+  if (!payload.html) {
+    throw new Error('html is required');
+  }
+
   const { browser, context, page } = await launchContext();
   try {
-    await ensureLoggedIn(page, blogUrl);
+    const session = await ensureLoggedIn(page, blogUrl);
+    if (!session.loggedIn) {
+      throw new Error(`Tistory session is not logged in. Current URL: ${session.currentUrl}`);
+    }
+
     await page.goto(resolveNewPostUrl(blogUrl), { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
+
     const titleFilled = await fillFirst(page, config.selectors.title, payload.title);
-    if (!titleFilled) throw new Error('제목 필드를 찾을 수 없습니다.');
+    if (!titleFilled) {
+      throw new Error('Could not find a title field. Set TISTORY_TITLE_SELECTOR.');
+    }
+
     const editorResult = await setHtmlContent(page, payload.html);
     await setCategory(page, payload.categoryId || config.defaultCategoryId);
     await setVisibility(page, payload.visibility || config.defaultVisibility);
     const tagResult = await addTags(page, payload.tagsCsv);
+
     const publishClicked = await clickFirst(page, config.selectors.publishButton);
-    if (!publishClicked) throw new Error('발행 버튼을 찾을 수 없습니다.');
+    if (!publishClicked) {
+      throw new Error('Could not find the publish button. Set TISTORY_PUBLISH_BUTTON_SELECTOR.');
+    }
+
     await page.waitForTimeout(1000);
     await setVisibility(page, payload.visibility || config.defaultVisibility);
     await page.waitForTimeout(300);
     await clickFirst(page, config.selectors.confirmButton);
     await page.waitForLoadState('networkidle').catch(() => {});
+
     let finalUrl = page.url();
     if (finalUrl.includes('/manage/newpost') || finalUrl.includes('/manage/post')) {
       await page.waitForTimeout(2500);
       finalUrl = page.url();
     }
+
     if (finalUrl.includes('/manage/newpost') || finalUrl.includes('/manage/post')) {
       const recoveredUrl = await findPublishedPostUrl(context, blogUrl, payload.title);
-      if (recoveredUrl) finalUrl = recoveredUrl;
+      if (recoveredUrl) {
+        finalUrl = recoveredUrl;
+      }
     }
-    return { ok: true, title: payload.title, url: finalUrl, postId: finalUrl.split('/').pop() || null, editorMode: editorResult.mode, tagsApplied: tagResult.count || 0 };
-  } finally { await cleanupBrowser(browser); }
-}
-app.get('/health', async (req, res) => {
-  const redisConfigured = !!(REDIS_URL && REDIS_TOKEN);
-  let redisConnected = false;
-  if (redisConfigured) {
-    try {
-      const r = await fetch(REDIS_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(['PING']),
-      });
-      const d = await r.json();
-      redisConnected = d.result === 'PONG';
-    } catch {}
+
+    return {
+      ok: true,
+      title: payload.title,
+      url: finalUrl,
+      postId: finalUrl.split('/').pop() || null,
+      editorMode: editorResult.mode,
+      tagsApplied: tagResult.count || 0
+    };
+  } finally {
+    await cleanupBrowser(browser);
   }
-  res.json({ ok: true, service: 'tistory-automation-server', time: new Date().toISOString(),
-    session: { localFile: storageStateExists(), redisConfigured, redisConnected } });
+}
+
+app.get('/health', async (req, res) => {
+  try {
+    let redisConnected = false;
+    if (hasUpstashConfig()) {
+      try {
+        const pong = await upstashCommand(['PING']);
+        redisConnected = pong === 'PONG';
+      } catch (_) {}
+    }
+
+    res.json({
+      ok: true,
+      service: 'tistory-automation-server',
+      time: new Date().toISOString(),
+      storageStateExists: await storageStateExists(),
+      storageBackend: hasUpstashConfig() ? 'upstash' : 'file',
+      session: {
+        localFile: fs.existsSync(config.storageStatePath),
+        upstashConfigured: hasUpstashConfig(),
+        upstashConnected: redisConnected,
+        upstashKey: hasUpstashConfig() ? config.upstashStorageKey : null
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.get('/session/check', async (req, res) => {
   const blogUrl = resolveBlogUrl(req.query.blogUrl);
-  if (!blogUrl) return res.status(400).json({ ok: false, error: 'blogUrl is required' });
+  if (!blogUrl) {
+    return res.status(400).json({ ok: false, error: 'blogUrl is required' });
+  }
+
   let browser;
   try {
     const launched = await launchContext();
     browser = launched.browser;
     const session = await ensureLoggedIn(launched.page, blogUrl);
-    res.json({ ok: true, loggedIn: session.loggedIn, currentUrl: session.currentUrl });
+    res.json({
+      ok: true,
+      storageStateExists: await storageStateExists(),
+      storageBackend: hasUpstashConfig() ? 'upstash' : 'file',
+      loggedIn: session.loggedIn,
+      currentUrl: session.currentUrl
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
-  } finally { await cleanupBrowser(browser); }
+  } finally {
+    await cleanupBrowser(browser);
+  }
 });
 
 app.post('/session/seed', async (req, res) => {
   const storageState = req.body?.storageState;
-  if (!storageState) return res.status(400).json({ ok: false, error: 'storageState is required' });
+  if (!storageState) {
+    return res.status(400).json({ ok: false, error: 'storageState is required' });
+  }
+
   try {
     const parsed = typeof storageState === 'string' ? JSON.parse(storageState) : storageState;
     if (!Array.isArray(parsed.cookies) || !Array.isArray(parsed.origins)) {
       throw new Error('storageState must contain cookies and origins arrays');
     }
-    await saveSession(parsed);
-    res.json({ ok: true, savedToFile: true, savedToRedis: !!(REDIS_URL && REDIS_TOKEN), cookieCount: parsed.cookies.length });
-  } catch (err) { res.status(400).json({ ok: false, error: err.message }); }
+
+    await writeStorageState(parsed);
+    res.json({
+      ok: true,
+      path: hasUpstashConfig() ? config.upstashStorageKey : config.storageStatePath,
+      storageBackend: hasUpstashConfig() ? 'upstash' : 'file',
+      cookieCount: parsed.cookies.length
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 app.post('/publish', async (req, res) => {
@@ -315,14 +531,15 @@ app.post('/publish', async (req, res) => {
     const result = await publishPost(req.body || {});
     res.json(result);
   } catch (err) {
-    console.error('[publish] 오류:', err.message);
+    console.error('[publish] error:', err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 const host = '0.0.0.0';
+
 app.listen(config.port, host, () => {
   ensureDataDir();
   console.log(`tistory automation server listening on ${host}:${config.port}`);
-  console.log(`Redis: ${REDIS_URL ? '✅ 설정됨' : '❌ 미설정 (UPSTASH_REDIS_REST_URL 필요)'}`);
+  console.log(`session backend: ${hasUpstashConfig() ? `upstash (${config.upstashStorageKey})` : 'file only'}`);
 });
