@@ -146,6 +146,20 @@ async function setHtmlContent(page, html) {
     await clickFirst(page, config.selectors.htmlModeButton);
   }
 
+  const frameLocator = page.locator('#editor-tistory_ifr').first();
+  if (await frameLocator.count().catch(() => 0)) {
+    const frame = await frameLocator.elementHandle();
+    const contentFrame = frame ? await frame.contentFrame() : null;
+    if (contentFrame) {
+      const body = contentFrame.locator('body').first();
+      await body.click();
+      await contentFrame.evaluate((value) => {
+        document.body.innerHTML = value;
+      }, html);
+      return { mode: 'iframe-body' };
+    }
+  }
+
   if (config.selectors.htmlTextarea) {
     const selectors = splitSelectors(config.selectors.htmlTextarea);
     for (const selector of selectors) {
@@ -170,20 +184,6 @@ async function setHtmlContent(page, html) {
   const editor = await firstLocator(page, config.selectors.editor);
   if (!editor) {
     throw new Error('Could not find a Tistory editor element. Set TISTORY_EDITOR_SELECTOR or TISTORY_HTML_TEXTAREA_SELECTOR.');
-  }
-
-  const frameLocator = page.locator('#editor-tistory_ifr').first();
-  if (await frameLocator.count().catch(() => 0)) {
-    const frame = await frameLocator.elementHandle();
-    const contentFrame = frame ? await frame.contentFrame() : null;
-    if (contentFrame) {
-      const body = contentFrame.locator('body').first();
-      await body.click();
-      await contentFrame.evaluate((value) => {
-        document.body.innerHTML = value;
-      }, html);
-      return { mode: 'iframe-body' };
-    }
   }
 
   await editor.click();
