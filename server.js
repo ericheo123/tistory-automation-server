@@ -76,7 +76,11 @@ async function firstLocator(page, selectorString) {
 async function clickFirst(page, selectorString) {
   const locator = await firstLocator(page, selectorString);
   if (!locator) return false;
-  await locator.click();
+  try {
+    await locator.click();
+  } catch (err) {
+    await locator.click({ force: true });
+  }
   return true;
 }
 
