@@ -26,12 +26,13 @@ const config = {
     title: env('TISTORY_TITLE_SELECTOR', 'textarea.textarea_tit||textarea[placeholder*="제목"]||input[name="title"]||textarea[name="title"]||input[placeholder*="제목"]'),
     editor: env('TISTORY_EDITOR_SELECTOR', '#editor-tistory_ifr||[contenteditable="true"]'),
     tagInput: env('TISTORY_TAG_INPUT_SELECTOR', 'input[name="tagText"]||input[placeholder*="태그"]||input[aria-label*="태그"]'),
-    publishButton: env('TISTORY_PUBLISH_BUTTON_SELECTOR', 'button:has-text("완료")||button:has-text("발행")||button:has-text("공개")'),
-    confirmButton: env('TISTORY_CONFIRM_BUTTON_SELECTOR', 'button:has-text("공개 발행")||button:has-text("발행")||button:has-text("완료")'),
+    publishButton: env('TISTORY_PUBLISH_BUTTON_SELECTOR', 'button.btn.btn-default'),
+    confirmButton: env('TISTORY_CONFIRM_BUTTON_SELECTOR', '.layer_foot .btn.btn-default'),
     htmlModeButton: env('TISTORY_HTML_MODE_BUTTON_SELECTOR', ''),
     htmlTextarea: env('TISTORY_HTML_TEXTAREA_SELECTOR', 'textarea:not(.textarea_tit)'),
     category: env('TISTORY_CATEGORY_SELECTOR', ''),
-    publicRadio: env('TISTORY_PUBLIC_RADIO_SELECTOR', '')
+    publicRadio: env('TISTORY_PUBLIC_RADIO_SELECTOR', 'input[name="basicSet"]'),
+    privateRadio: env('TISTORY_PRIVATE_RADIO_SELECTOR', 'input[name="basicSet"]')
   }
 };
 
@@ -251,12 +252,22 @@ async function setCategory(page, categoryId) {
 }
 
 async function setVisibility(page, visibility) {
-  if (visibility !== 'public' || !config.selectors.publicRadio) {
+  if (!config.selectors.publicRadio) {
+    return { skipped: true };
+  }
+  const radios = page.locator(config.selectors.publicRadio);
+  const count = await radios.count().catch(() => 0);
+  if (!count) {
     return { skipped: true };
   }
 
-  const changed = await clickFirst(page, config.selectors.publicRadio);
-  return { skipped: !changed };
+  if (visibility === 'public') {
+    await radios.nth(0).check({ force: true });
+    return { skipped: false, mode: 'public' };
+  }
+
+  await radios.nth(Math.max(0, count - 1)).check({ force: true });
+  return { skipped: false, mode: 'private' };
 }
 
 async function publishPost(payload) {
@@ -297,6 +308,8 @@ async function publishPost(payload) {
     }
 
     await page.waitForTimeout(1000);
+    await setVisibility(page, payload.visibility || config.defaultVisibility);
+    await page.waitForTimeout(300);
     await clickFirst(page, config.selectors.confirmButton);
     await page.waitForLoadState('networkidle').catch(() => {});
 
