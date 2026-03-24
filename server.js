@@ -111,7 +111,7 @@ async function performKakaoLogin(page) {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    const kakaoBtn = page.locator('a.btn_kakao, [data-login="kakao"], a[href*="kakao"]').first();
+    const kakaoBtn = page.locator('a.link_kakao_id, a.btn_login').first();
     if (await kakaoBtn.count()) {
       await kakaoBtn.click();
     } else {
