@@ -24,7 +24,7 @@ const config = {
   defaultVisibility: env('TISTORY_VISIBILITY', 'public'),
   selectors: {
     title: env('TISTORY_TITLE_SELECTOR', 'textarea.textarea_tit||textarea[placeholder*="제목"]||input[name="title"]||textarea[name="title"]||input[placeholder*="제목"]'),
-    editor: env('TISTORY_EDITOR_SELECTOR', '[contenteditable="true"]'),
+    editor: env('TISTORY_EDITOR_SELECTOR', '#editor-tistory_ifr||[contenteditable="true"]'),
     tagInput: env('TISTORY_TAG_INPUT_SELECTOR', 'input[name="tagText"]||input[placeholder*="태그"]||input[aria-label*="태그"]'),
     publishButton: env('TISTORY_PUBLISH_BUTTON_SELECTOR', 'button:has-text("완료")||button:has-text("발행")||button:has-text("공개")'),
     confirmButton: env('TISTORY_CONFIRM_BUTTON_SELECTOR', 'button:has-text("공개 발행")||button:has-text("발행")||button:has-text("완료")'),
@@ -170,6 +170,20 @@ async function setHtmlContent(page, html) {
   const editor = await firstLocator(page, config.selectors.editor);
   if (!editor) {
     throw new Error('Could not find a Tistory editor element. Set TISTORY_EDITOR_SELECTOR or TISTORY_HTML_TEXTAREA_SELECTOR.');
+  }
+
+  const frameLocator = page.locator('#editor-tistory_ifr').first();
+  if (await frameLocator.count().catch(() => 0)) {
+    const frame = await frameLocator.elementHandle();
+    const contentFrame = frame ? await frame.contentFrame() : null;
+    if (contentFrame) {
+      const body = contentFrame.locator('body').first();
+      await body.click();
+      await contentFrame.evaluate((value) => {
+        document.body.innerHTML = value;
+      }, html);
+      return { mode: 'iframe-body' };
+    }
   }
 
   await editor.click();
