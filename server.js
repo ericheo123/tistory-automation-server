@@ -137,6 +137,39 @@ async function cleanupBrowser(browser) {
   }
 }
 
+async function findPublishedPostUrl(context, blogUrl, title) {
+  const page = await context.newPage();
+  page.setDefaultTimeout(config.timeoutMs);
+  page.setDefaultNavigationTimeout(config.timeoutMs);
+
+  try {
+    await page.goto(`${resolveManageUrl(blogUrl)}/posts/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const targetTitle = String(title || '').trim();
+    if (!targetTitle) {
+      return null;
+    }
+
+    const href = await page.evaluate((expectedTitle) => {
+      const links = Array.from(document.querySelectorAll('a.link_cont'));
+      const normalized = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+      const exact = links.find((link) => normalized(link.textContent) === normalized(expectedTitle));
+      if (exact?.href) {
+        return exact.href;
+      }
+
+      const partial = links.find((link) => normalized(link.textContent).includes(normalized(expectedTitle)));
+      return partial?.href || null;
+    }, targetTitle);
+
+    return href || null;
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 async function ensureLoggedIn(page, blogUrl) {
   await page.goto(resolveManageUrl(blogUrl), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
@@ -282,7 +315,7 @@ async function publishPost(payload) {
     throw new Error('html is required');
   }
 
-  const { browser, page } = await launchContext();
+  const { browser, context, page } = await launchContext();
   try {
     const session = await ensureLoggedIn(page, blogUrl);
     if (!session.loggedIn) {
@@ -313,11 +346,24 @@ async function publishPost(payload) {
     await clickFirst(page, config.selectors.confirmButton);
     await page.waitForLoadState('networkidle').catch(() => {});
 
+    let finalUrl = page.url();
+    if (finalUrl.includes('/manage/newpost') || finalUrl.includes('/manage/post')) {
+      await page.waitForTimeout(2500);
+      finalUrl = page.url();
+    }
+
+    if (finalUrl.includes('/manage/newpost') || finalUrl.includes('/manage/post')) {
+      const recoveredUrl = await findPublishedPostUrl(context, blogUrl, payload.title);
+      if (recoveredUrl) {
+        finalUrl = recoveredUrl;
+      }
+    }
+
     return {
       ok: true,
       title: payload.title,
-      url: page.url(),
-      postId: page.url().split('/').pop() || null,
+      url: finalUrl,
+      postId: finalUrl.split('/').pop() || null,
       editorMode: editorResult.mode,
       tagsApplied: tagResult.count || 0
     };
