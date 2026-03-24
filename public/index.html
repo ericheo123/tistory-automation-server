@@ -21,7 +21,7 @@
         gap: 20px;
       }
       .card {
-        background: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.94);
         border: 1px solid rgba(15, 23, 42, 0.08);
         border-radius: 18px;
         padding: 20px;
@@ -40,6 +40,10 @@
       .grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .stack {
+        display: grid;
         gap: 14px;
       }
       label {
@@ -84,6 +88,17 @@
         margin: 0 0 12px;
         font-size: 18px;
       }
+      .hint {
+        margin: 0;
+        font-size: 13px;
+        color: #64748b;
+      }
+      .seed-box {
+        padding: 14px;
+        border-radius: 14px;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+      }
       pre {
         margin: 0;
         padding: 16px;
@@ -115,9 +130,25 @@
   </head>
   <body>
     <div class="wrap">
-      <section class="card">
-        <h1>Tistory Automation Tester</h1>
-        <p class="sub">Make 연결 전에 로컬에서 본문, 세션 상태, 발행 요청을 확인하는 테스트 페이지입니다.</p>
+      <section class="card stack">
+        <div>
+          <h1>Tistory Automation Tester</h1>
+          <p class="sub">배포 후 세션 확인, 세션 업로드, 본문 미리보기, 발행 테스트를 한 화면에서 확인하는 페이지입니다.</p>
+        </div>
+
+        <div class="seed-box stack">
+          <div>
+            <h2 class="panel-title">세션 업로드</h2>
+            <p class="hint">배포 후 Render 세션이 날아갔을 때 로컬의 <code>storageState.json</code> 파일을 선택한 뒤 바로 업로드할 수 있습니다.</p>
+          </div>
+          <div>
+            <label for="seedFile">storageState.json 파일</label>
+            <input id="seedFile" type="file" accept=".json,application/json" />
+          </div>
+          <div class="actions" style="margin-top:0;">
+            <button class="secondary" id="seedBtn">Session Seed Upload</button>
+          </div>
+        </div>
 
         <div class="grid">
           <div>
@@ -141,46 +172,46 @@
           </div>
         </div>
 
-        <div style="margin-top:14px;">
+        <div>
           <label for="title">Title</label>
-          <input id="title" value="유가 상승이 기름값만의 문제가 아닌 이유" />
+          <input id="title" value="[테스트] 유가 상승이 생활비에 미치는 영향" />
         </div>
 
-        <div style="margin-top:14px;">
+        <div>
           <label for="excerpt">Excerpt</label>
-          <textarea id="excerpt">유가 상승이 전기요금, 장바구니 물가, 택배비까지 어떻게 번지는지 정리한 테스트 글입니다.</textarea>
+          <textarea id="excerpt">유가 상승이 기름값뿐 아니라 전기요금, 장바구니 물가, 생활경제 전반에 어떻게 번지는지 정리한 테스트 글입니다.</textarea>
         </div>
 
-        <div style="margin-top:14px;">
+        <div>
           <label for="tagsCsv">Tags CSV</label>
           <input id="tagsCsv" value="유가,국제유가,기름값,생활경제,물가" />
         </div>
 
-        <div style="margin-top:14px;">
+        <div>
           <label for="html">HTML</label>
           <textarea id="html" class="html-box"><div class="post-wrap" style="font-family:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;max-width:720px;margin:0 auto;color:#1f2937;line-height:1.8;padding:16px;">
   <div class="post-thumbnail" style="background:linear-gradient(135deg,#1a0500,#2d0a00,#1a0e00);border-radius:14px;padding:36px 28px;margin-bottom:28px;color:#fff;">
     <div style="display:inline-block;background:#ef4444;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-bottom:14px;">생활경제</div>
-    <h1 style="margin:0 0 12px;font-size:28px;line-height:1.35;">유가 상승이<br>기름값만의 문제가 아닌 이유</h1>
+    <h1 style="margin:0 0 12px;font-size:28px;line-height:1.35;">유가 상승이<br />기름값만의 문제가 아닌 이유</h1>
     <div style="font-size:13px;opacity:0.78;">유가 · 물가 · 생활경제</div>
   </div>
   <div class="post-body">
-    <p>유가가 오르면 주유소 가격만 오르는 것처럼 보이지만 실제로는 전기요금, 물류비, 식품 가격까지 영향을 줍니다.</p>
+    <p>유가가 오르면 주유비만 오르는 것처럼 느껴지지만, 실제로는 물류비와 공공요금, 식품 가격까지 여러 영역에 영향을 줍니다.</p>
     <h2 style="font-size:22px;margin:28px 0 12px;">지금 왜 중요한가요?</h2>
-    <p>국제 유가가 빠르게 오르면 국내 생활 물가에 시차를 두고 반영될 수 있습니다. 특히 수입 에너지 의존도가 높을수록 체감이 빨라집니다.</p>
+    <p>국제유가가 빠르게 오르면 국내 생활 물가가 시차를 두고 반영됩니다. 수입 에너지 의존도가 높은 만큼 체감도도 커질 수 있습니다.</p>
     <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:18px 20px;margin:22px 0;">
       <strong style="display:block;margin-bottom:10px;">핵심 요약</strong>
       <ul style="margin:0;padding-left:18px;">
         <li>주유비 부담이 먼저 커질 수 있습니다.</li>
         <li>물류비 상승은 생활물가로 이어질 수 있습니다.</li>
-        <li>에너지 요금 인상 압력도 커질 수 있습니다.</li>
+        <li>에너지 요금 인상 압력이 커질 수 있습니다.</li>
       </ul>
     </div>
-    <h2 style="font-size:22px;margin:28px 0 12px;">지금 뭘 보면 될까요?</h2>
-    <p>유가 자체보다도 운송비, 공공요금, 원자재 가격이 함께 오르는지 보는 게 중요합니다.</p>
+    <h2 style="font-size:22px;margin:28px 0 12px;">지금 뭘 보면 좋을까요?</h2>
+    <p>유가 자체보다도 운송비, 공공요금, 식자재 가격이 함께 오르는지 보는 것이 중요합니다.</p>
     <div style="background:linear-gradient(135deg,#1a0500,#2d0a00);border-radius:14px;padding:24px 20px;margin-top:32px;color:#fff;">
-      <strong style="display:block;margin-bottom:10px;color:#f59e0b;">오늘의 핵심</strong>
-      <p style="margin:0;">유가 상승은 단순한 기름값 뉴스가 아니라 생활비 전반의 흐름을 읽는 신호일 수 있습니다.</p>
+      <strong style="display:block;margin-bottom:10px;color:#f59e0b;">오늘의 한 줄</strong>
+      <p style="margin:0;">유가 상승은 단순히 주유소 가격이 아니라 생활비 전반에 번지는 신호일 수 있습니다.</p>
     </div>
   </div>
 </div></textarea>
@@ -206,20 +237,20 @@
 
     <script>
       const byId = (id) => document.getElementById(id);
-      const responseBox = byId('responseBox');
-      const statusBox = byId('status');
-      const previewFrame = byId('previewFrame');
+      const responseBox = byId("responseBox");
+      const statusBox = byId("status");
+      const previewFrame = byId("previewFrame");
 
       function payload() {
         return {
-          blogUrl: byId('blogUrl').value.trim(),
-          title: byId('title').value.trim(),
-          html: byId('html').value,
-          tagsCsv: byId('tagsCsv').value.trim(),
-          slug: byId('slug').value.trim(),
-          excerpt: byId('excerpt').value.trim(),
-          visibility: byId('visibility').value,
-          categoryId: byId('categoryId').value.trim()
+          blogUrl: byId("blogUrl").value.trim(),
+          title: byId("title").value.trim(),
+          html: byId("html").value,
+          tagsCsv: byId("tagsCsv").value.trim(),
+          slug: byId("slug").value.trim(),
+          excerpt: byId("excerpt").value.trim(),
+          visibility: byId("visibility").value,
+          categoryId: byId("categoryId").value.trim()
         };
       }
 
@@ -228,7 +259,7 @@
       }
 
       function setResponse(data) {
-        responseBox.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        responseBox.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
       }
 
       async function callApi(url, options) {
@@ -241,31 +272,61 @@
         } catch (_) {}
         setResponse(body);
         setStatus(`${url} 응답 완료 (${res.status})`);
+        return body;
       }
 
-      byId('previewBtn').addEventListener('click', () => {
-        previewFrame.srcdoc = byId('html').value;
-        setStatus('HTML 미리보기를 갱신했습니다.');
+      async function uploadStorageState() {
+        const file = byId("seedFile").files[0];
+        if (!file) {
+          setStatus("storageState.json 파일을 먼저 선택해 주세요.");
+          return;
+        }
+
+        setStatus("storageState.json 읽는 중...");
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (error) {
+          setResponse({ ok: false, error: "선택한 파일이 올바른 JSON이 아닙니다." });
+          setStatus("세션 업로드 실패");
+          return;
+        }
+
+        await callApi("/session/seed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storageState: parsed })
+        });
+      }
+
+      byId("previewBtn").addEventListener("click", () => {
+        previewFrame.srcdoc = byId("html").value;
+        setStatus("HTML 미리보기를 갱신했습니다.");
       });
 
-      byId('healthBtn').addEventListener('click', async () => {
-        await callApi('/health');
+      byId("healthBtn").addEventListener("click", async () => {
+        await callApi("/health");
       });
 
-      byId('sessionBtn').addEventListener('click', async () => {
-        const url = `/session/check?blogUrl=${encodeURIComponent(byId('blogUrl').value.trim())}`;
+      byId("sessionBtn").addEventListener("click", async () => {
+        const url = `/session/check?blogUrl=${encodeURIComponent(byId("blogUrl").value.trim())}`;
         await callApi(url);
       });
 
-      byId('publishBtn').addEventListener('click', async () => {
-        await callApi('/publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+      byId("publishBtn").addEventListener("click", async () => {
+        await callApi("/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload())
         });
       });
 
-      previewFrame.srcdoc = byId('html').value;
+      byId("seedBtn").addEventListener("click", async () => {
+        await uploadStorageState();
+      });
+
+      previewFrame.srcdoc = byId("html").value;
     </script>
   </body>
 </html>
