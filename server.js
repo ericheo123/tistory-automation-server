@@ -23,13 +23,13 @@ const config = {
   defaultCategoryId: env('TISTORY_CATEGORY_ID', '0'),
   defaultVisibility: env('TISTORY_VISIBILITY', 'public'),
   selectors: {
-    title: env('TISTORY_TITLE_SELECTOR', 'input[name="title"]||textarea[name="title"]||input[placeholder*="제목"]'),
+    title: env('TISTORY_TITLE_SELECTOR', 'textarea.textarea_tit||textarea[placeholder*="제목"]||input[name="title"]||textarea[name="title"]||input[placeholder*="제목"]'),
     editor: env('TISTORY_EDITOR_SELECTOR', '[contenteditable="true"]'),
-    tagInput: env('TISTORY_TAG_INPUT_SELECTOR', 'input[placeholder*="태그"]||input[aria-label*="태그"]'),
+    tagInput: env('TISTORY_TAG_INPUT_SELECTOR', 'input[name="tagText"]||input[placeholder*="태그"]||input[aria-label*="태그"]'),
     publishButton: env('TISTORY_PUBLISH_BUTTON_SELECTOR', 'button:has-text("완료")||button:has-text("발행")||button:has-text("공개")'),
     confirmButton: env('TISTORY_CONFIRM_BUTTON_SELECTOR', 'button:has-text("공개 발행")||button:has-text("발행")||button:has-text("완료")'),
     htmlModeButton: env('TISTORY_HTML_MODE_BUTTON_SELECTOR', ''),
-    htmlTextarea: env('TISTORY_HTML_TEXTAREA_SELECTOR', ''),
+    htmlTextarea: env('TISTORY_HTML_TEXTAREA_SELECTOR', 'textarea:not(.textarea_tit)'),
     category: env('TISTORY_CATEGORY_SELECTOR', ''),
     publicRadio: env('TISTORY_PUBLIC_RADIO_SELECTOR', '')
   }
@@ -147,6 +147,19 @@ async function setHtmlContent(page, html) {
   }
 
   if (config.selectors.htmlTextarea) {
+    const selectors = splitSelectors(config.selectors.htmlTextarea);
+    for (const selector of selectors) {
+      const count = await page.locator(selector).count().catch(() => 0);
+      for (let index = 0; index < count; index += 1) {
+        const textarea = page.locator(selector).nth(index);
+        const currentValue = await textarea.inputValue().catch(() => '');
+        if (selector.includes('textarea') && currentValue.length > 2000) {
+          continue;
+        }
+        await textarea.fill(html);
+        return { mode: 'html-textarea', selector, index };
+      }
+    }
     const textarea = await firstLocator(page, config.selectors.htmlTextarea);
     if (textarea) {
       await textarea.fill(html);
